@@ -1,4 +1,4 @@
-# 1 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+# 1 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 
 
 
@@ -32,7 +32,7 @@
  * * = optional 
 
 */
-# 31 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+# 31 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 // #define CHILD_ID_G_DOOR_3 2
 // #define CHILD_ID_G_DOOR_4 3
 
@@ -45,10 +45,10 @@
 
 
 
-# 44 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino" 2
-# 45 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino" 2
-# 46 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino" 2
-# 47 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino" 2
+# 44 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 2
+# 45 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 2
+# 46 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 2
+# 47 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 2
 
 // Initialize AHT10 sensor
 AHTxx aht10(0x38 /*AHT15/AHT20/AHT21/AHT25 I2C address, AHT10 I2C address if address pin to GND*/, AHT1x_SENSOR);
@@ -140,7 +140,7 @@ float ahtTemp, ahtHum;
  * @return
 
  */
-# 133 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+# 133 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void reportAHTxx() {
   ahtTemp = aht10.readTemperature();
 
@@ -170,7 +170,7 @@ void reportAHTxx() {
  * @return String a string describing the error
 
  */
-# 157 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+# 157 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 String getAHTxxStatus() {
   switch(aht10.getStatus()) {
     case 0x00 /*success, no errors*/:
@@ -210,7 +210,7 @@ String getAHTxxStatus() {
  * @return
 
  */
-# 191 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+# 191 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void I2C_Scanner() {
   Serial.println();
   Serial.println("I2C scanner. Scanning ...");

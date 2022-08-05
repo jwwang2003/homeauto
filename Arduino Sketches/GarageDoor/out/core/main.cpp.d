@@ -1,4 +1,4 @@
-c:\Users\jwwan\Documents\homeauto\GarageDoor\out\core\main.cpp.o: \
+c:\Users\jwwan\Documents\homeauto\Arduino\ Sketches\GarageDoor\out\core\main.cpp.o: \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\cores\esp32\main.cpp \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4/tools/sdk/esp32/include/freertos/include/freertos/FreeRTOS.h \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4/tools/sdk/esp32/include/freertos/include/esp_additions/freertos/FreeRTOSConfig.h \

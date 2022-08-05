@@ -1,4 +1,4 @@
-#line 1 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\libraries\\AHTxx-main\\library.json"
+#line 1 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\libraries\\AHTxx-main\\library.json"
 {
   "name":        "AHTxx",
   "keywords":    "humidity, temperature, aht10, aht15, aht20, aht21, aht25, aosong, asair, i2c",

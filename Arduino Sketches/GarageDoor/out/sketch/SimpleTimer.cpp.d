@@ -1,6 +1,6 @@
-c:\Users\jwwan\Documents\homeauto\GarageDoor\out\sketch\SimpleTimer.cpp.o: \
- c:\Users\jwwan\Documents\homeauto\GarageDoor\out\sketch\SimpleTimer.cpp \
- c:\Users\jwwan\Documents\homeauto\GarageDoor\out\sketch\SimpleTimer.h \
+c:\Users\jwwan\Documents\homeauto\Arduino\ Sketches\GarageDoor\out\sketch\SimpleTimer.cpp.o: \
+ c:\Users\jwwan\Documents\homeauto\Arduino\ Sketches\GarageDoor\out\sketch\SimpleTimer.cpp \
+ c:\Users\jwwan\Documents\homeauto\Arduino\ Sketches\GarageDoor\out\sketch\SimpleTimer.h \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\cores\esp32/Arduino.h \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\cores\esp32/esp_arduino_version.h \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4/tools/sdk/esp32/include/freertos/include/freertos/FreeRTOS.h \

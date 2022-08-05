@@ -1,4 +1,4 @@
-c:\Users\jwwan\Documents\homeauto\GarageDoor\out\libraries\EEPROM\EEPROM.cpp.o: \
+c:\Users\jwwan\Documents\homeauto\Arduino\ Sketches\GarageDoor\out\libraries\EEPROM\EEPROM.cpp.o: \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\libraries\EEPROM\src\EEPROM.cpp \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\libraries\EEPROM\src\EEPROM.h \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\cores\esp32/Arduino.h \

@@ -1,4 +1,4 @@
-#line 1 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\SimpleTimer.h"
+#line 1 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\SimpleTimer.h"
 //
 // Created by kiryanenko on 05.10.19.
 //

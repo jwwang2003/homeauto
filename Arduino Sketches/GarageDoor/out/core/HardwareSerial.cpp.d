@@ -1,4 +1,4 @@
-c:\Users\jwwan\Documents\homeauto\GarageDoor\out\core\HardwareSerial.cpp.o: \
+c:\Users\jwwan\Documents\homeauto\Arduino\ Sketches\GarageDoor\out\core\HardwareSerial.cpp.o: \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\cores\esp32\HardwareSerial.cpp \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\variants\esp32da/pins_arduino.h \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\cores\esp32\HardwareSerial.h \

@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#line 1 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 1 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 #define SKETCH_NAME "Garage Door"
 #define SKETCH_VERSION "1.0.0"
 
@@ -53,23 +53,23 @@ AHTxx aht10(AHTXX_ADDRESS_X38, AHT1x_SENSOR);
 MyMessage reportHum(CHILD_ID_G_HUM, V_HUM);
 MyMessage reportTemp(CHILD_ID_G_TEMP, V_TEMP);
 
-#line 54 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 54 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void presentation();
-#line 70 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 70 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void toggle();
-#line 78 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 78 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void setup();
-#line 105 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 105 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void loop();
-#line 112 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 112 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void receive(const MyMessage &msg);
-#line 133 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 133 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void reportAHTxx();
-#line 157 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 157 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 String getAHTxxStatus();
-#line 191 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 191 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void I2C_Scanner();
-#line 54 "c:\\Users\\jwwan\\Documents\\homeauto\\GarageDoor\\GarageDoor.ino"
+#line 54 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void presentation() {
   sendSketchInfo(SKETCH_NAME, SKETCH_VERSION);
 

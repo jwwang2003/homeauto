@@ -1,4 +1,4 @@
-c:\Users\jwwan\Documents\homeauto\GarageDoor\out\core\wiring_pulse.c.o: \
+c:\Users\jwwan\Documents\homeauto\Arduino\ Sketches\GarageDoor\out\core\wiring_pulse.c.o: \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\cores\esp32\wiring_pulse.c \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\cores\esp32\wiring_private.h \
  C:\Users\jwwan\AppData\Local\Arduino15\packages\esp32\hardware\esp32\2.0.4\cores\esp32\Arduino.h \
