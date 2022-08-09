@@ -3,6 +3,10 @@
     "*.json": "jsonc",
     "memory": "cpp",
     "random": "cpp",
-    "optional": "cpp"
+    "optional": "cpp",
+    "fstream": "cpp",
+    "array": "cpp",
+    "string": "cpp",
+    "string_view": "cpp"
   }
 }
