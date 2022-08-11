@@ -7,9 +7,9 @@
 
  * @brief Garage door controller
 
- * @version 0.2
+ * @version 0.3
 
- * @date 2022-08-08
+ * @date 2022-08-10
 
  * 
 
@@ -67,8 +67,7 @@
 # 68 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 2
 # 69 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 2
 
-SimpleTimer timer;
-
+void handleGarageDoorCallback();
 void reportAHTxx();
 String getAHTxxStatus();
 void I2C_Scanner();
@@ -79,13 +78,15 @@ AHTxx aht10(0x38 /*AHT15/AHT20/AHT21/AHT25 I2C address, AHT10 I2C address if add
 MyMessage reportHum(4, V_HUM);
 MyMessage reportTemp(5, V_TEMP);
 
-const int ATHxxTimerId = timer.setInterval(10000 /* Temperature and humidity sample rate*/, getAHTxxStatus);
+SimpleTimer timer;
+
+int AHTxxTimerID;
 
 class GarageDoor {
   public:
-    int statusID; // MySensors CHILDID
+    int statusID;
     int textID;
-    int outputPin; // Digital pin on MCU
+    int outputPin;
     int inputPin;
 
     // initializer
@@ -95,19 +96,44 @@ class GarageDoor {
       this->outputPin = outputPin;
       this->inputPin = inputPin;
 
+      sensorState = 
+# 99 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 3 4
+                   __null
+# 99 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+                       ;
+      prevState = 
+# 100 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 3 4
+                 __null
+# 100 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+                     ;
+      curState = 
+# 101 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 3 4
+                __null
+# 101 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+                    ;
+
       reportGarageDoorSwitch = new MyMessage(statusID, V_STATUS);
       reportGarageDoorState = new MyMessage(textID, V_TEXT);
+
+      garageTimerId = -1;
     }
+
+    char *getStateString() { return garageDoorState[curState]; }
+    char *getStateString(int s) { return garageDoorState[s]; }
+
+    void init();
+    bool isClosed();
 
     bool open();
     bool close();
 
-    bool updateState(int newState);
-    void updateSensorState();
-
-    // ----------- Setter Methods -----------
-
-    bool setSensorState(bool newState) { return sensorState = newState; }
+    void reportData();
+    void updateState(int newState);
+    void handleTimeout();
+    bool handleStateChange(bool newState);
+    void checkSensorStateChange();
+    bool isOpen();
+    bool readSensorState();
 
   private:
     char *garageDoorState[6] = {
@@ -116,18 +142,41 @@ class GarageDoor {
       "关闭中",
       "打开中",
       "静止",
+      "警告"
     };
 
-    bool sensorState;
+    int sensorState;
     int curState, prevState;
 
     MyMessage *reportGarageDoorSwitch;
     MyMessage *reportGarageDoorState;
 
+    int garageTimerId;
+
     void toggle(int it = 1);
+    void updateSensorState(int newState) { sensorState = newState; }
+    void confirmClose();
 };
 
+void GarageDoor::init() {
+  readSensorState();
+  if(sensorState == 1) updateState(0);
+  else updateState(1);
+}
+
+void GarageDoor::reportData() {
+  send(reportGarageDoorSwitch->set(curState != 0 && curState != 2));
+  send(reportGarageDoorState->set(getStateString(curState)));
+}
+
+void GarageDoor::updateState(int newState) {
+  prevState = curState;
+  curState = newState;
+  reportData();
+}
+
 bool GarageDoor::open() {
+  garageTimerId = timer.setTimeout(12*1000 /* 12s to fully open*/, handleGarageDoorCallback);
   switch(curState) {
     case 0:
       toggle();
@@ -142,6 +191,7 @@ bool GarageDoor::open() {
 }
 
 bool GarageDoor::close() {
+  garageTimerId = timer.setTimeout(15*1000 /* 15s to fully close*/, handleGarageDoorCallback);
   switch(curState) {
     case 1:
       toggle();
@@ -158,24 +208,82 @@ bool GarageDoor::close() {
   return true;
 }
 
-bool GarageDoor::updateState(int newState) {
-  bool res = newState == 0 ? close() : open();
+void GarageDoor::confirmClose() {
+  if(garageTimerId != -1) {
+    timer.disable(garageTimerId);
+    timer.deleteTimer(garageTimerId);
+    garageTimerId = -1;
+  }
 
+  updateState(0);
 }
 
-void GarageDoor::updateSensorState() {
-  long int currentTime = millis();
+void GarageDoor::handleTimeout() {
+  if(curState == 0 || curState == 1) return;
+
+  if(curState == 2) {
+    updateState(4);
+  } else if(curState == 3) {
+    updateState(1);
+  }
+
+  garageTimerId = -1;
+}
+
+bool GarageDoor::handleStateChange(bool newState) {
+  bool res = newState == 0 ? close() : open();
+  reportData();
+  return res;
+}
+
+void GarageDoor::checkSensorStateChange() {
+  if(!readSensorState()) return;
+
+  if(isClosed()) {
+    if(curState == 2)
+      confirmClose();
+    else
+      updateState(0);
+  } else {
+    if(curState == 0) {
+      // WARNING - Garage door sensor detected unintentional opening
+      updateState(1);
+    }
+    if(curState == 2 || curState == 3) {
+      // normal
+    } else {
+      // still normal?
+    }
+  }
+}
+
+bool GarageDoor::isClosed() {
+  readSensorState();
+
+  if(sensorState == 1) return true;
+  else return false;
+}
+
+bool GarageDoor::readSensorState() {
+  int ATM = digitalRead(inputPin);
+
+  if(ATM == sensorState && sensorState != 
+# 258 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 3 4
+                                         __null
+# 258 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+                                             ) return false;
+
+  sensorState = ATM;
+  return true;
 }
 
 void GarageDoor::toggle(int it) {
   for(; it > 0; --it) {
-    int t = prevState;
-    prevState = curState;
-    if(prevState == 0) curState = 3;
-    else if(prevState == 1) curState = 2;
-    else if(prevState == 2) curState = 3;
-    else if(prevState == 3) curState = 4;
-    else if(prevState == 4) curState = 2;
+    if(curState == 0) updateState(3);
+    else if(curState == 1) updateState(2);
+    else if(curState == 2) updateState(3);
+    else if(curState == 3) updateState(4);
+    else if(curState == 4) updateState(2);
 
     digitalWrite(outputPin, 0x1);
     delay(50);
@@ -186,27 +294,27 @@ void GarageDoor::toggle(int it) {
 }
 
 GarageDoor *garageDoors[3] = {
-  new GarageDoor(0, 1, 25, 36),
+  new GarageDoor(0, 1, 25, 13),
   
-# 190 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 3 4
+# 282 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino" 3 4
  __null
-# 190 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+# 282 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
      ,
-  new GarageDoor(2, 3, 26, 39)
+  new GarageDoor(2, 3, 26, 14)
 };
 
-GarageDoor *garageDoor1 = garageDoors[0], *garageDoor2 = garageDoors[2];
-
-void __attribute__((section(".iram1" "." "28"))) handleGarageDoorInterupt1() {
-  garageDoor1->updateSensorState();
+void handleGarageDoorCallback() {
+  garageDoors[0]->handleTimeout();
+  garageDoors[2]->handleTimeout();
 }
 
-void __attribute__((section(".iram1" "." "29"))) handleGarageDoorInterupt2() {
-  garageDoor2->updateSensorState();
+void handleCheckSensorCallback() {
+  garageDoors[0]->checkSensorStateChange();
+  garageDoors[2]->checkSensorStateChange();
 }
 
 void presentation() {
-  sendSketchInfo("Garage Door", "0.2");
+  sendSketchInfo("Garage Door", "0.3");
 
   present(4, S_HUM, "车库湿度");
   present(5, S_TEMP, "车库温度");
@@ -222,15 +330,14 @@ void setup() {
   Wire.begin();
   I2C_Scanner();
 
+  pinMode(2, 0x03);
+
   pinMode(25, 0x03);
   pinMode(26, 0x03);
   pinMode(32, 0x03);
   pinMode(33, 0x03);
-  pinMode(36, 0x09);
-  pinMode(39, 0x09);
-
-  attachInterrupt(36, handleGarageDoorInterupt1, 0x03);
-  attachInterrupt(39, handleGarageDoorInterupt2, 0x03);
+  pinMode(13, 0x01);
+  pinMode(14, 0x01);
 
   // Set all garage remote output pins to OFF
   digitalWrite(25, 0x1);
@@ -238,8 +345,8 @@ void setup() {
   digitalWrite(32, 0x1);
   digitalWrite(33, 0x1);
 
-  garageDoor1->setSensorState(digitalRead(36));
-  garageDoor2->setSensorState(digitalRead(39));
+  garageDoors[0]->init();
+  garageDoors[2]->init();
 
   Serial.println(((reinterpret_cast<const __FlashStringHelper *>(("Beginning to initialize AHT10 sensor")))));
   while(aht10.begin() != true) {
@@ -249,10 +356,15 @@ void setup() {
   Serial.println(((reinterpret_cast<const __FlashStringHelper *>(("AHT10 OK")))));
 
   delay(5000); // pause for 5 seconds
+
+  AHTxxTimerID = timer.setInterval(10000 /* Temperature and humidity sample rate*/, reportAHTxx);
+  timer.enable(AHTxxTimerID);
+
+  timer.setInterval(100, handleCheckSensorCallback);
 }
 
 void loop() {
-
+  timer.run();
 }
 
 void receive(const MyMessage &msg) {
@@ -262,8 +374,9 @@ void receive(const MyMessage &msg) {
       case V_STATUS:
         if(msg.sensor == 0 || msg.sensor == 2) {
           try {
-            garageDoors[msg.sensor]->updateState((int)msg.data);
-          } catch (int e) { Serial.println("An error occured\n" + e)}
+            Serial.println((String)msg.sensor + " " + msg.data);
+            garageDoors[msg.sensor]->handleStateChange(msg.getBool());
+          } catch (int e) { Serial.println("An error occured\n" + e); }
         }
         break;
       default:
@@ -284,7 +397,7 @@ float ahtTemp, ahtHum;
  * @return
 
  */
-# 278 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+# 375 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void reportAHTxx() {
   ahtTemp = aht10.readTemperature();
 
@@ -314,7 +427,7 @@ void reportAHTxx() {
  * @return String a string describing the error
 
  */
-# 302 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+# 399 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 String getAHTxxStatus() {
   switch(aht10.getStatus()) {
     case 0x00 /*success, no errors*/:
@@ -354,7 +467,7 @@ String getAHTxxStatus() {
  * @return
 
  */
-# 336 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+# 433 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void I2C_Scanner() {
   Serial.println();
   Serial.println("I2C scanner. Scanning ...");

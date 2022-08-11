@@ -2,15 +2,15 @@
  * @file GarageDoor.ino
  * @author Jimmy Wang
  * @brief Garage door controller
- * @version 0.2
- * @date 2022-08-08
+ * @version 0.3
+ * @date 2022-08-10
  * 
  * @copyright Copyright (c) 2022
  * 
  */
 
 #define SKETCH_NAME "Garage Door"
-#define SKETCH_VERSION "0.2"
+#define SKETCH_VERSION "0.3"
 
 // Enable debug prints
 #define MY_DEBUG
@@ -53,11 +53,11 @@
 #define G_DOOR_3_PIN 32
 #define G_DOOR_4_PIN 33
 
-#define G_DOOR_1_SENS_PIN 36
-#define G_DOOR_2_SENS_PIN 39
+#define G_DOOR_1_SENS_PIN 13
+#define G_DOOR_2_SENS_PIN 14
 
-#define ATHXX_SAMPLE 10000 // Temperature and humidity sample rate
-#define REED_SENSOR_SAMPLE 100
+#define ATHXX_SAMPLERATE 10000 // Temperature and humidity sample rate
+#define REED_SENSOR_SAMPLERATE 100
 
 #define G_DOOR_OPEN_TIME 12*1000  // 12s to fully open
 #define G_DOOR_CLOSE_TIME 15*1000 // 15s to fully close
@@ -67,8 +67,7 @@
 #include "AHTxx.h"
 #include "SimpleTimer.h"
 
-SimpleTimer timer;
-
+void handleGarageDoorCallback();
 void reportAHTxx();
 String getAHTxxStatus();
 void I2C_Scanner();
@@ -79,13 +78,15 @@ AHTxx aht10(AHTXX_ADDRESS_X38, AHT1x_SENSOR);
 MyMessage reportHum(CHILD_ID_G_HUM, V_HUM);
 MyMessage reportTemp(CHILD_ID_G_TEMP, V_TEMP);
 
-const int ATHxxTimerId = timer.setInterval(ATHXX_SAMPLE, getAHTxxStatus);
+SimpleTimer timer;
+
+int AHTxxTimerID;
 
 class GarageDoor {
   public:
-    int statusID;   // MySensors CHILDID
+    int statusID;
     int textID;
-    int outputPin;  // Digital pin on MCU
+    int outputPin;
     int inputPin;
 
     // initializer
@@ -95,22 +96,33 @@ class GarageDoor {
       this->outputPin = outputPin;
       this->inputPin = inputPin;
 
+      sensorState = NULL;
+      prevState = NULL;
+      curState = NULL;
+
       reportGarageDoorSwitch = new MyMessage(statusID, V_STATUS);
       reportGarageDoorState = new MyMessage(textID, V_TEXT);
 
-      garageDoorTimer = NULL;
+      garageTimerId = -1;
     }
+
+    char *getStateString() { return garageDoorState[curState]; }
+    char *getStateString(int s) { return garageDoorState[s]; }
+
+    void init();
+    bool isClosed();
 
     bool open();
     bool close();
 
-    bool updateState(int newState);
-    void updateSensorState();
+    void reportData();
+    void updateState(int newState);
+    void handleTimeout();
+    bool handleStateChange(bool newState);
+    void checkSensorStateChange();
+    bool isOpen();
+    bool readSensorState();
 
-    // ----------- Setter Methods -----------
-
-    bool setSensorState(bool newState) { return sensorState = newState; }
-  
   private:
     char *garageDoorState[6] = { 
       "关闭", 
@@ -118,24 +130,41 @@ class GarageDoor {
       "关闭中", 
       "打开中", 
       "静止",
+      "警告"
     };
 
-    bool sensorState;
+    int sensorState;
     int curState, prevState;
 
     MyMessage *reportGarageDoorSwitch;
     MyMessage *reportGarageDoorState;
 
-    Timer *garageDoorTimer;
+    int garageTimerId;
 
     void toggle(int it = 1);
+    void updateSensorState(int newState) { sensorState = newState; }
+    void confirmClose();
 };
 
-bool GarageDoor::open() {
-  if(garageDoorTimer != NULL) {
-    
-  }
+void GarageDoor::init() {
+  readSensorState();
+  if(sensorState == 1) updateState(0);
+  else updateState(1);
+}
 
+void GarageDoor::reportData() {
+  send(reportGarageDoorSwitch->set(curState != 0 && curState != 2));
+  send(reportGarageDoorState->set(getStateString(curState)));
+}
+
+void GarageDoor::updateState(int newState) {
+  prevState = curState;
+  curState = newState;
+  reportData();
+}
+
+bool GarageDoor::open() {
+  garageTimerId = timer.setTimeout(G_DOOR_OPEN_TIME, handleGarageDoorCallback);
   switch(curState) {
     case 0:
       toggle();
@@ -150,6 +179,7 @@ bool GarageDoor::open() {
 }
 
 bool GarageDoor::close() {
+  garageTimerId = timer.setTimeout(G_DOOR_CLOSE_TIME, handleGarageDoorCallback);
   switch(curState) {
     case 1:
       toggle();
@@ -166,28 +196,78 @@ bool GarageDoor::close() {
   return true;
 }
 
-bool GarageDoor::updateState(int newState) {
-  bool res = newState == 0 ? close() : open();
-  
+void GarageDoor::confirmClose() {
+  if(garageTimerId != -1) {
+    timer.disable(garageTimerId);
+    timer.deleteTimer(garageTimerId);
+    garageTimerId = -1;
+  }
+
+  updateState(0);
 }
 
-void GarageDoor::updateSensorState() {
-  long int currentTime = millis();
+void GarageDoor::handleTimeout() {
+  if(curState == 0 || curState == 1) return;
 
-
+  if(curState == 2) {
+    updateState(4);
+  } else if(curState == 3) {
+    updateState(1);
+  }
   
-  bool newState = readInput(inputPin);
+  garageTimerId = -1;
+}
+
+bool GarageDoor::handleStateChange(bool newState) {
+  bool res = newState == 0 ? close() : open();
+  reportData();
+  return res;
+}
+
+void GarageDoor::checkSensorStateChange() {
+  if(!readSensorState()) return;
+
+  if(isClosed()) {
+    if(curState == 2)
+      confirmClose();
+    else
+      updateState(0);
+  } else {
+    if(curState == 0) {
+      // WARNING - Garage door sensor detected unintentional opening
+      updateState(1);
+    }
+    if(curState == 2 || curState == 3) {
+      // normal
+    } else {
+      // still normal?
+    }
+  }
+}
+
+bool GarageDoor::isClosed() {
+  readSensorState();
+
+  if(sensorState == 1) return true;
+  else return false;
+}
+
+bool GarageDoor::readSensorState() {
+  int ATM = digitalRead(inputPin);
+
+  if(ATM == sensorState && sensorState != NULL) return false;
+  
+  sensorState = ATM;
+  return true;
 }
 
 void GarageDoor::toggle(int it) {
   for(; it > 0; --it) {
-    int t = prevState;
-    prevState = curState;
-    if(prevState == 0) curState = 3;
-    else if(prevState == 1) curState = 2;
-    else if(prevState == 2) curState = 3;
-    else if(prevState == 3) curState = 4;
-    else if(prevState == 4) curState = 2;
+    if(curState == 0) updateState(3);
+    else if(curState == 1) updateState(2);
+    else if(curState == 2) updateState(3);
+    else if(curState == 3) updateState(4);
+    else if(curState == 4) updateState(2);
 
     digitalWrite(outputPin, HIGH);
     delay(50);
@@ -203,14 +283,14 @@ GarageDoor *garageDoors[3] = {
   new GarageDoor(CHILD_ID_G_DOOR_2, CHILD_ID_G_DOOR_2_STATUS, G_DOOR_2_PIN, G_DOOR_2_SENS_PIN)
 };
 
-GarageDoor *garageDoor1 = garageDoors[0], *garageDoor2 = garageDoors[2];
-
-void IRAM_ATTR handleGarageDoorInterupt1() {
-  garageDoor1->updateSensorState();
+void handleGarageDoorCallback() {
+  garageDoors[0]->handleTimeout();
+  garageDoors[2]->handleTimeout();
 }
 
-void IRAM_ATTR handleGarageDoorInterupt2() {
-  garageDoor2->updateSensorState();
+void handleCheckSensorCallback() {
+  garageDoors[0]->checkSensorStateChange();
+  garageDoors[2]->checkSensorStateChange();
 }
 
 void presentation() {
@@ -230,15 +310,14 @@ void setup() {
   Wire.begin();
   I2C_Scanner();
 
+  pinMode(2, OUTPUT);
+  
   pinMode(G_DOOR_1_PIN, OUTPUT);
   pinMode(G_DOOR_2_PIN, OUTPUT);
   pinMode(G_DOOR_3_PIN, OUTPUT);
   pinMode(G_DOOR_4_PIN, OUTPUT);
-  pinMode(G_DOOR_1_SENS_PIN, INPUT_PULLDOWN);
-  pinMode(G_DOOR_2_SENS_PIN, INPUT_PULLDOWN);
-
-  attachInterrupt(G_DOOR_1_SENS_PIN, handleGarageDoorInterupt1, CHANGE);
-  attachInterrupt(G_DOOR_2_SENS_PIN, handleGarageDoorInterupt2, CHANGE);
+  pinMode(G_DOOR_1_SENS_PIN, INPUT);
+  pinMode(G_DOOR_2_SENS_PIN, INPUT);
 
   // Set all garage remote output pins to OFF
   digitalWrite(G_DOOR_1_PIN, HIGH);
@@ -246,8 +325,8 @@ void setup() {
   digitalWrite(G_DOOR_3_PIN, HIGH);
   digitalWrite(G_DOOR_4_PIN, HIGH);
 
-  garageDoor1->setSensorState(digitalRead(G_DOOR_1_SENS_PIN));
-  garageDoor2->setSensorState(digitalRead(G_DOOR_2_SENS_PIN));
+  garageDoors[0]->init();
+  garageDoors[2]->init();
 
   Serial.println(F("Beginning to initialize AHT10 sensor"));
   while(aht10.begin() != true) {
@@ -257,10 +336,15 @@ void setup() {
   Serial.println(F("AHT10 OK"));
 
   delay(5000); // pause for 5 seconds
+
+  AHTxxTimerID = timer.setInterval(ATHXX_SAMPLERATE, reportAHTxx);
+  timer.enable(AHTxxTimerID);
+
+  timer.setInterval(REED_SENSOR_SAMPLERATE, handleCheckSensorCallback);
 }
 
 void loop() {
-
+  timer.run();
 }
 
 void receive(const MyMessage &msg) {
@@ -270,8 +354,9 @@ void receive(const MyMessage &msg) {
       case V_STATUS:
         if(msg.sensor == 0 || msg.sensor == 2) {
           try {
-            garageDoors[msg.sensor]->updateState((int)msg.data);
-          } catch (int e) { Serial.println("An error occured\n" + e)}
+            Serial.println((String)msg.sensor + " " + msg.data);
+            garageDoors[msg.sensor]->handleStateChange(msg.getBool());
+          } catch (int e) { Serial.println("An error occured\n" + e); }
         }
         break;
       default:
@@ -303,12 +388,6 @@ void reportAHTxx() {
   } else {
     Serial.println(getAHTxxStatus());
   }
-}
-
-// Helper functions
-
-int readInput(int pin) {
-  return digitalRead(pin);
 }
 
 /**
