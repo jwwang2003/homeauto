@@ -4,18 +4,19 @@
  * @file GarageDoor.ino
  * @author Jimmy Wang
  * @brief Garage door controller
- * @version 0.3
- * @date 2022-08-10
+ * @version 1.0
+ * @date 2022-08-11
  * 
  * @copyright Copyright (c) 2022
  * 
  */
 
 #define SKETCH_NAME "Garage Door"
-#define SKETCH_VERSION "0.3"
+#define SKETCH_VERSION "1.0"
 
 // Enable debug prints
 #define MY_DEBUG
+
 
 /**
  * Radio wiring ESP32(Node32s): RF24, RFM69, RFM95:
@@ -29,7 +30,7 @@
  * | CE   | 17   | -     | -     |
  * | RST  | -    | GND   | GND   |
  * | IRQ  | 16*  | 16    | 16    |
- * * = optional 
+ * * = optional
 */
 
 #define MY_RADIO_RFM69
@@ -55,21 +56,69 @@
 #define G_DOOR_3_PIN 32
 #define G_DOOR_4_PIN 33
 
+// #define G_DOOR_1_PIN 32
+// #define G_DOOR_2_PIN 33
+// #define G_DOOR_3_PIN 25
+// #define G_DOOR_4_PIN 26
+
 #define G_DOOR_1_SENS_PIN 13
 #define G_DOOR_2_SENS_PIN 14
 
 #define ATHXX_SAMPLERATE 10000 // Temperature and humidity sample rate
 #define REED_SENSOR_SAMPLERATE 100
 
-#define G_DOOR_OPEN_TIME 12*1000  // 12s to fully open
-#define G_DOOR_CLOSE_TIME 15*1000 // 15s to fully close
+#define G_DOOR_OPEN_TIME 13*1000  // 12s to fully open
+#define G_DOOR_CLOSE_TIME 17*1000 // 15s to fully close
 
+#include "Vector.h"
+#include "cppQueue.h"
 #include <MySensors.h>
 #include <Wire.h>
 #include "AHTxx.h"
 #include "SimpleTimer.h"
 
-void handleGarageDoorCallback();
+#define ELEMENT_COUNT_MAX 100
+
+typedef struct Trigger {
+  int intervalStages[3] = { 50, 400, 750 };
+
+  uint8_t stage;
+  uint8_t pin;
+  uint16_t start;
+  uint8_t it; // number of iterations left
+
+  Trigger(uint8_t pin, uint8_t it): stage(0), pin(pin), start(millis()), it(it) {}
+
+  bool work() {
+    uint16_t curTime = millis();
+    if(start + intervalStages[stage] <= curTime) {
+      bool eval = stage == 0 || stage == 2;
+      digitalWrite(pin, eval ? HIGH : LOW);
+
+      // move on to next stage
+      stage++;
+
+      // stages finished and final iteration, return true to show this worker has finished
+      if(stage >= 3 && it == 0) return true;
+      else if(stage >= 3 && it > 0) {
+        // stages finished but n more iterations to go
+        stage = 0;
+        it--;
+
+        if(it == 0) return true;
+      }
+
+      start = curTime;
+    }
+    return false;
+  }
+};
+
+Trigger* triggerArray[ELEMENT_COUNT_MAX];
+Vector<Trigger*> triggerVector(triggerArray);
+
+void handleGarageTimeoutCallback();
+void handleSensorCheckCallback();
 void reportAHTxx();
 String getAHTxxStatus();
 void I2C_Scanner();
@@ -91,193 +140,217 @@ class GarageDoor {
     int outputPin;
     int inputPin;
 
-    // initializer
+    // class constructor
     GarageDoor(int statusID, int textID, int outputPin, int inputPin) {
       this->statusID = statusID;
       this->textID = textID;
       this->outputPin = outputPin;
       this->inputPin = inputPin;
 
-      sensorState = NULL;
-      prevState = NULL;
-      curState = NULL;
+      this->doorState = doorClosed;
+      this->senseState = senClosed;
 
       reportGarageDoorSwitch = new MyMessage(statusID, V_STATUS);
       reportGarageDoorState = new MyMessage(textID, V_TEXT);
 
       garageTimerId = -1;
+      garageTimerTimestamp = 0;
     }
 
-    char *getStateString() { return garageDoorState[curState]; }
-    char *getStateString(int s) { return garageDoorState[s]; }
+    void init() {
+      this->readSensorState();
+      if(isSensorClosed()) updateState(doorClosed);
+      else updateState(doorOpened);
+    }
 
-    void init();
-    bool isClosed();
+    void reportData() {
+      send(this->reportGarageDoorSwitch->set(doorState != doorClosed && doorState != doorClosing));
+      send(this->reportGarageDoorState->set(this->doorState));
+    }
+    
+    // called by recieve function
+    // handles user input from HA
+    void handleStateChange(bool newState) {
+      newState ? this->open(): this->close();
+      // reportData();
+    }
 
-    bool open();
-    bool close();
+    // called periodically by timer callback
+    void handleSensorCheck() {
+      if(!this->readSensorState()) return;
 
-    void reportData();
-    void updateState(int newState);
-    void handleTimeout();
-    bool handleStateChange(bool newState);
-    void checkSensorStateChange();
-    bool isOpen();
-    bool readSensorState();
+      if(this->isSensorClosed()) {
+        if(doorState == doorClosing)
+          confirmClose();
+        else
+          // door closed unexpectedly, normal?
+          updateState(doorClosed);
+      } else {
+        if(doorState == doorClosed) {
+          // WARNING - Garage door sensor detected unintentional opening
+          updateState(doorOpened);
+        }
+        if(doorState == doorClosing || doorState == doorOpening) {
+          // normal
+        } else {
+          // still normal?
+        }
+      }
+    }
 
-  private:
-    char *garageDoorState[6] = { 
-      "关闭", 
-      "打开", 
-      "关闭中", 
-      "打开中", 
-      "静止",
-      "警告"
-    };
+    // called by timer callback
+    // if time exceeded then something might have gone wrong
+    void handleTimeout() {
+      if(doorState == doorClosed || doorState == doorOpened) return;
 
-    int sensorState;
-    int curState, prevState;
+      int tLim = doorState == doorClosing ? G_DOOR_CLOSE_TIME : G_DOOR_OPEN_TIME;
+      Serial.print(garageTimerTimestamp + tLim);
+      Serial.print(" ");
+      Serial.println(millis());
+      if(garageTimerTimestamp + tLim < millis()) return;
 
-    MyMessage *reportGarageDoorSwitch;
-    MyMessage *reportGarageDoorState;
+      if(doorState == doorClosing) {
+        updateState(doorHalted);
+      } else if(doorState == doorOpening) {
+        updateState(doorOpened);
+      }
 
-    int garageTimerId;
+      this->cleanup();
+    }
 
-    void toggle(int it = 1);
-    void updateSensorState(int newState) { sensorState = newState; }
-    void confirmClose();
+    // getter methods
+    int getDoorState() { return doorState; }
+    int getSensorState() { return senseState; }
+
+    private:
+      enum garageDoorStates {
+        doorClosed,
+        doorOpened,
+        doorClosing,
+        doorOpening,
+        doorHalted,
+      } doorState;
+
+      enum sensorStates {
+        senOpened,
+        senClosed,
+      } senseState;
+
+      MyMessage *reportGarageDoorSwitch;
+      MyMessage *reportGarageDoorState;
+
+      int8_t garageTimerId;
+      uint32_t garageTimerTimestamp;
+
+      // door controls
+      bool open() {
+        garageTimerId = timer.setTimeout(G_DOOR_OPEN_TIME, handleGarageTimeoutCallback);
+        garageTimerTimestamp = millis();
+        switch(doorState) {
+          case 0:
+            this->toggle();
+            break;
+          case 2:
+            this->toggle();
+            break;
+          default:
+            return false;
+        }
+        return true;
+      }
+
+      // door controls
+      bool close() {
+        garageTimerId = timer.setTimeout(G_DOOR_CLOSE_TIME, handleGarageTimeoutCallback);
+        garageTimerTimestamp = millis();
+        switch(doorState) {
+          case 1:
+            this->toggle();
+            break;
+          case 3:
+            this->toggle(2);
+            break;
+          case 4:
+            this->toggle();
+            break;
+          default:
+            return false;
+        }
+        return true;
+      }
+
+      void updateState(int newState) {
+        doorState = static_cast<garageDoorStates>(newState);
+        this->reportData();
+      }
+
+      bool isClosed() {
+        // if closed or closing
+        return doorState == doorClosed || doorClosing;
+      }
+
+      bool isSensorClosed() {
+        this->readSensorState();
+
+        if(this->senseState == senClosed) return true;
+        else return false;
+      }
+
+      bool readSensorState() {
+        int ATM = digitalRead(this->inputPin); // 1 - Closed, 0 - Open
+
+        sensorStates atm = static_cast<sensorStates>(ATM);
+
+        if(atm == this->senseState && this->senseState != NULL) return false;
+        
+        this->senseState = atm;
+        return true;
+      }
+
+      void confirmClose() {
+        updateState(0);
+
+        this->cleanup();
+      }
+
+      /**
+       * @brief This function emulates a button press on the actual garage door remote
+       * 
+       * @param it the number of times to press
+       */
+      void toggle(int it = 1) {
+        for(int i = 0; i < it; ++i) {
+          if(doorState == doorClosed) this->updateState(doorOpening);
+          else if(doorState == doorOpened) this->updateState(doorClosing);
+          else if(doorState == doorClosing) this->updateState(doorOpening);
+          else if(doorState == doorOpening) this->updateState(doorHalted);
+          else if(doorState == doorHalted) this->updateState(doorClosing);
+        }
+
+        triggerVector.push_back(new Trigger(outputPin, it));
+
+        /*
+        // first time toggle no need to pause
+        if(i != 0) delay(750);
+        digitalWrite(outputPin, HIGH);
+        delay(50);
+        digitalWrite(outputPin, LOW);
+        delay(400);
+        digitalWrite(outputPin, HIGH);
+        */
+      }
+
+      void cleanup() {
+        if(garageTimerId != -1) {
+          timer.disable(garageTimerId);
+          timer.deleteTimer(garageTimerId);
+          garageTimerId = -1;
+        }
+        if(garageTimerTimestamp != 0) {
+          garageTimerTimestamp = 0;
+        }
+      }
 };
-
-void GarageDoor::init() {
-  readSensorState();
-  if(sensorState == 1) updateState(0);
-  else updateState(1);
-}
-
-void GarageDoor::reportData() {
-  send(reportGarageDoorSwitch->set(curState != 0 && curState != 2));
-  send(reportGarageDoorState->set(getStateString(curState)));
-}
-
-void GarageDoor::updateState(int newState) {
-  prevState = curState;
-  curState = newState;
-  reportData();
-}
-
-bool GarageDoor::open() {
-  garageTimerId = timer.setTimeout(G_DOOR_OPEN_TIME, handleGarageDoorCallback);
-  switch(curState) {
-    case 0:
-      toggle();
-      break;
-    case 2:
-      toggle();
-      break;
-    default:
-      return false;
-  }
-  return true;
-}
-
-bool GarageDoor::close() {
-  garageTimerId = timer.setTimeout(G_DOOR_CLOSE_TIME, handleGarageDoorCallback);
-  switch(curState) {
-    case 1:
-      toggle();
-      break;
-    case 3:
-      toggle(2);
-      break;
-    case 4:
-      toggle();
-      break;
-    default:
-      return false;
-  }
-  return true;
-}
-
-void GarageDoor::confirmClose() {
-  if(garageTimerId != -1) {
-    timer.disable(garageTimerId);
-    timer.deleteTimer(garageTimerId);
-    garageTimerId = -1;
-  }
-
-  updateState(0);
-}
-
-void GarageDoor::handleTimeout() {
-  if(curState == 0 || curState == 1) return;
-
-  if(curState == 2) {
-    updateState(4);
-  } else if(curState == 3) {
-    updateState(1);
-  }
-  
-  garageTimerId = -1;
-}
-
-bool GarageDoor::handleStateChange(bool newState) {
-  bool res = newState == 0 ? close() : open();
-  reportData();
-  return res;
-}
-
-void GarageDoor::checkSensorStateChange() {
-  if(!readSensorState()) return;
-
-  if(isClosed()) {
-    if(curState == 2)
-      confirmClose();
-    else
-      updateState(0);
-  } else {
-    if(curState == 0) {
-      // WARNING - Garage door sensor detected unintentional opening
-      updateState(1);
-    }
-    if(curState == 2 || curState == 3) {
-      // normal
-    } else {
-      // still normal?
-    }
-  }
-}
-
-bool GarageDoor::isClosed() {
-  readSensorState();
-
-  if(sensorState == 1) return true;
-  else return false;
-}
-
-bool GarageDoor::readSensorState() {
-  int ATM = digitalRead(inputPin);
-
-  if(ATM == sensorState && sensorState != NULL) return false;
-  
-  sensorState = ATM;
-  return true;
-}
-
-void GarageDoor::toggle(int it) {
-  for(; it > 0; --it) {
-    if(curState == 0) updateState(3);
-    else if(curState == 1) updateState(2);
-    else if(curState == 2) updateState(3);
-    else if(curState == 3) updateState(4);
-    else if(curState == 4) updateState(2);
-
-    digitalWrite(outputPin, HIGH);
-    delay(50);
-    digitalWrite(outputPin, LOW);
-    delay(400);
-    digitalWrite(outputPin, HIGH);
-  }
-}
 
 GarageDoor *garageDoors[3] = {
   new GarageDoor(CHILD_ID_G_DOOR_1, CHILD_ID_G_DOOR_1_STATUS, G_DOOR_1_PIN, G_DOOR_1_SENS_PIN),
@@ -285,25 +358,23 @@ GarageDoor *garageDoors[3] = {
   new GarageDoor(CHILD_ID_G_DOOR_2, CHILD_ID_G_DOOR_2_STATUS, G_DOOR_2_PIN, G_DOOR_2_SENS_PIN)
 };
 
-#line 291 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
-void handleCheckSensorCallback();
-#line 296 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+#line 369 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void presentation();
-#line 309 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+#line 382 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void setup();
-#line 346 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+#line 418 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void loop();
-#line 350 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+#line 428 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
 void receive(const MyMessage &msg);
-#line 286 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
-void handleGarageDoorCallback() {
+#line 359 "c:\\Users\\jwwan\\Documents\\homeauto\\Arduino Sketches\\GarageDoor\\GarageDoor.ino"
+void handleGarageTimeoutCallback() {
   garageDoors[0]->handleTimeout();
   garageDoors[2]->handleTimeout();
 }
 
-void handleCheckSensorCallback() {
-  garageDoors[0]->checkSensorStateChange();
-  garageDoors[2]->checkSensorStateChange();
+void handleSensorCheckCallback() {
+  garageDoors[0]->handleSensorCheck();
+  garageDoors[2]->handleSensorCheck();
 }
 
 void presentation() {
@@ -351,13 +422,18 @@ void setup() {
   delay(5000); // pause for 5 seconds
 
   AHTxxTimerID = timer.setInterval(ATHXX_SAMPLERATE, reportAHTxx);
-  timer.enable(AHTxxTimerID);
 
-  timer.setInterval(REED_SENSOR_SAMPLERATE, handleCheckSensorCallback);
+  timer.setInterval(REED_SENSOR_SAMPLERATE, handleSensorCheckCallback);
 }
 
 void loop() {
   timer.run();
+  for(int i = 0; i < triggerVector.size(); ++i) {
+    if(triggerVector[i]->work()) {
+      delete triggerVector[i];
+      triggerVector.remove(i);
+    }
+  }
 }
 
 void receive(const MyMessage &msg) {
@@ -367,7 +443,6 @@ void receive(const MyMessage &msg) {
       case V_STATUS:
         if(msg.sensor == 0 || msg.sensor == 2) {
           try {
-            Serial.println((String)msg.sensor + " " + msg.data);
             garageDoors[msg.sensor]->handleStateChange(msg.getBool());
           } catch (int e) { Serial.println("An error occured\n" + e); }
         }
